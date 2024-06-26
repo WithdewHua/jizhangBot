@@ -1,35 +1,37 @@
-var TelegramBot = require('node-telegram-bot-api'); // Copyrigth by @miya0v0 
-var proxy_url = 'http://127.0.0.1:7890'   //梯子代理端口
-var tgToken = '7388212270:AAG8od50m99RvwhJQ8tn9WZhIPImM7xjg-A'
-var { pool, request, caozuoshouce, evaluateExpression } = require('./utils')
+var TelegramBot = require('node-telegram-bot-api');
+var proxy_url = 'http://127.0.0.1:7890'
 
-var bot = new TelegramBot(tgToken, {
+var { isProd, pool, request, caozuoshouce, evaluateExpression, adminId, tgToken } = require('./utils')
+
+var bot = isProd ? new TelegramBot(tgToken, {
+    polling: true,
+}) : new TelegramBot(tgToken, {
     polling: true,
     request: {   //代理   部署时不需要
         proxy: proxy_url,
     }
 });
 
+bot.sendMessage(adminId, '启动成功')
+
 const keyboard = [
     [{ text: '🚀开始使用' }, { text: "📕使用说明" }],
+    [{ text: "🟢定制机器人" }, { text: '🟢小程序开发' }]
     [{ text: "🏦U兑TRX", url: 'https://t.me/+4Cf_vjvu-qE1ZDll' }]
 ]
-bot.getMe().then(res => {
-    console.log(res);
-})
+
 bot.on('message', async (msg) => {
-    console.log(msg, '\n--------message');
     const { text } = msg
     const { id: userid, first_name, last_name, username } = msg.from
     const { id: chatid, type } = msg.chat
     const { new_chat_participant, left_chat_participant } = msg
-    if (new_chat_participant && (type == 'group' || type == 'supergroup')) { //被拉入群
+    if (new_chat_participant && (type == 'group' || type == 'supergroup')) {
         bot.getMe().then(async res => {
             if (new_chat_participant.id == res.id) {
                 await onInvite({ chatid, inviterId: userid })
                 bot.sendMessage(
                     chatid,
-                    `🙋大家好,我是<b>明月支付记账机器人</b>\n😊感谢把我加入贵群！\n💱请邀请人先输入开始进行初始化。`,
+                    `🙋大家好,我是<b>记账机器人</b>\n😊感谢把我加入贵群！\n💱请邀请人先输入开始进行初始化。`,
                     {
                         parse_mode: 'HTML',
                         reply_markup: {
@@ -45,7 +47,7 @@ bot.on('message', async (msg) => {
 })
 
 bot.on('text', async (msg) => {
-    console.log(msg, '\n--------msgText');
+    // console.log(msg, '\n--------msgText');
     const { text, message_id } = msg
     const { id: userid, first_name, last_name, username } = msg.from
     const { id: chatid, type, title } = msg.chat
@@ -130,7 +132,7 @@ bot.on('text', async (msg) => {
         changeTitle(chatid, title)
     } else if (type == 'private') {
         if (text == '/start') {
-            bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人`, {
+            bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人，使用前请先阅读使用说明。`, {
                 parse_mode: 'HTML',
                 reply_markup: {
                     keyboard,
@@ -149,6 +151,8 @@ bot.on('text', async (msg) => {
                     inline_keyboard: [[{ text: '点击拉我入群', url: 'https://t.me/MYZF_Bot?startgroup=start' }]]
                 }
             })
+        } else if (text == '🟢小程序开发' || text == '🟢定制机器人') {
+            bot.sendMessage(userid, 'https://t.me/zd_9528h')
         }
     }
 })
@@ -168,7 +172,7 @@ function shangxiake(type, chatid) {
 
 // 现实操作人列表
 function showCaozuoren(chatid, msgid) {
-    const sql = `select * from groupList where id = ${Math.abs(chatid)}`
+    const sql = `select * from grouplist where id = ${Math.abs(chatid)}`
     pool.query(sql, (err, resuelt) => {
         if (err) return
         if (resuelt[0]) {
@@ -191,12 +195,12 @@ function showCaozuoren(chatid, msgid) {
 
 //设置群计算功能
 function jisuangongneng(chatid, jisuanStatus) {
-    const sql = `SELECT * FROM groupList WHERE id = ${Math.abs(chatid)}`
+    const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`
     pool.query(sql, (err, res) => {
         if (err) return
         if (res.length && res[0].id) {
             if (res[0].jisuanStatus != jisuanStatus) {
-                const sql = `update groupList set jisuanStatus = '${jisuanStatus}' where id = ${Math.abs(chatid)}`
+                const sql = `update grouplist set jisuanStatus = '${jisuanStatus}' where id = ${Math.abs(chatid)}`
                 pool.query(sql, (err, res) => {
                     if (err) return
                     bot.sendMessage(chatid, `计算功能已${jisuanStatus ? '开启' : '关闭'}`)
@@ -211,7 +215,7 @@ function jisuangongneng(chatid, jisuanStatus) {
 // 获取群信息
 function getGroupInfo(chatid) {
     return new Promise((resolve, reject) => {
-        const sql = `select * from groupList where id = ${Math.abs(chatid)}`
+        const sql = `select * from grouplist where id = ${Math.abs(chatid)}`
         pool.query(sql, (err, res) => {
             if (err) return
             if (res[0] && res[0].id) {
@@ -223,11 +227,11 @@ function getGroupInfo(chatid) {
 
 // 更新群title
 function changeTitle(chatid, title) {
-    const sql = `SELECT * FROM groupList WHERE id = ${Math.abs(chatid)}`
+    const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`
     pool.query(sql, (err, res) => {
         if (err) return
         if (res.length && res[0].id && res[0].title != title) {
-            const sql = `update groupList set title = '${title}' where id = ${Math.abs(chatid)}`
+            const sql = `update grouplist set title = '${title}' where id = ${Math.abs(chatid)}`
             pool.query(sql)
         }
     })
@@ -235,9 +239,9 @@ function changeTitle(chatid, title) {
 
 // 被移除群
 function leaveGroup(chatid) {
-    const sql = `DELETE FROM groupList WHERE id = ${Math.abs(chatid)}`
+    const sql = `DELETE FROM grouplist WHERE id = ${Math.abs(chatid)}`
     pool.query(sql, (err, res) => {
-        if (err) return console.log(err);
+        if (err) return
         const sql = `DROP TABLE group${Math.abs(chatid)}`
         pool.query(sql)
     })
@@ -247,16 +251,16 @@ function leaveGroup(chatid) {
 function onInvite(data) {
     return new Promise((resolve, reject) => {
         const { chatid, inviterId } = data
-        const sql = `select * from groupList where id = ${Math.abs(chatid)}`
+        const sql = `select * from grouplist where id = ${Math.abs(chatid)}`
         pool.query(sql, (err, res) => {
             if (res.length == 0) {
-                const sql = `INSERT INTO groupList (id, inviterId, admin) VALUES (${Math.abs(chatid)}, ${Number(inviterId)}, "${String(inviterId)}")`
+                const sql = `INSERT INTO grouplist (id, inviterId, admin) VALUES (${Math.abs(chatid)}, ${Number(inviterId)}, "${String(inviterId)}")`
                 pool.query(sql, (err, res) => {
-                    if (err) return console.log(err, 'onInvite-Sql-ERROR');
+                    if (err) return
                     resolve()
                 })
             } else {
-                const sql = `update groupList set inviterId = ${Number(inviterId)}, admin = "${String(inviterId)}"`
+                const sql = `update grouplist set inviterId = ${Number(inviterId)}, admin = "${String(inviterId)}"`
                 pool.query(sql, (err, res) => {
                     if (err) return
                     bot.sendMessage(chatid, '回归提示：操作人信息已重置，需重新添加操作人！')
@@ -269,9 +273,9 @@ function onInvite(data) {
 function isInvite(data) {
     return new Promise((resolve, reject) => {
         const { chatid, userid } = data
-        const sql = `SELECT * FROM groupList WHERE id = ${Math.abs(chatid)}`
+        const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`
         pool.query(sql, (err, res) => {
-            if (err) return console.log(err, 'isInvite-sql-error');
+            if (err) return
             const inviterId = res[0]?.inviterId
             if (inviterId && inviterId == userid) {
                 resolve()
@@ -282,10 +286,9 @@ function isInvite(data) {
 // 是否是操作人
 function isCozuoren(chatid, userid) {
     return new Promise((resolve, reject) => {
-        let sql = `SELECT * FROM groupList WHERE id = ${Math.abs(chatid)}`
+        let sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`
         pool.query(sql, (err, res) => {
-            console.log(res, 'isCozuoren67');
-            if (err) return console.log(err);
+            if (err) return
             let admin = res[0]?.admin
             if (!admin || admin === null) {
                 return
@@ -303,7 +306,7 @@ function isCozuoren(chatid, userid) {
 //查询群状态
 function getGroupStatus(chatid) {
     return new Promise((resolve, reject) => {
-        const sql = `SELECT * FROM groupList WHERE id = ${Math.abs(chatid)}`
+        const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`
         pool.query(sql, (err, res) => {
             if (err) return
             const status = res[0]?.status
@@ -332,7 +335,7 @@ async function jinrizhangdan(chatid, day = 0, date = null) {
             sql = `SELECT * FROM group${chatid} WHERE DATE(create_time) = '${date}';`
         }
         pool.query(sql, (err, res) => {
-            if (err) return console.log(err);
+            if (err) return
             // 入款统计
             const rukuanList = res.filter(item => item.type == 0)
             let rukuanText = `${title}入款(${rukuanList.length})笔`
@@ -358,11 +361,11 @@ async function jinrizhangdan(chatid, day = 0, date = null) {
             const weixiafaR = formatNumber(yingxiafaR - yixiafaR)
             const weixiafaU = formatNumber(yingxiafaU - yixiafaU)
 
-            const msg = `${rukuanText}\n${xiafaText}\n<code>应下发：${formatNumber(yingxiafaR)} | ${formatNumber(yingxiafaU)}U</code>\n<code>已下发：${formatNumber(yixiafaR)} | ${formatNumber(yixiafaU)}U</code>\n<code>未下发：${weixiafaR} | ${weixiafaU}U</code>`
+            const msg = `${rukuanText}\n${xiafaText}\n<code>\n应下发：${formatNumber(yingxiafaR)} | ${formatNumber(yingxiafaU)}U</code>\n<code>已下发：${formatNumber(yixiafaR)} | ${formatNumber(yixiafaU)}U</code>\n<code>未下发：${weixiafaR} | ${weixiafaU}U</code>`
             bot.sendMessage(`-${chatid}`, msg, {
                 parse_mode: 'HTML',
                 reply_markup: {
-                    inline_keyboard: [[{ text: 'USDT闪兑TRX(测试中)', url: 'https://t.me/+4Cf_vjvu-qE1ZDll' }]]
+                    inline_keyboard: [[{ text: 'USDT闪兑TRX', url: 'https://t.me/+4Cf_vjvu-qE1ZDll' }]]
                 },
             })
 
@@ -400,9 +403,9 @@ async function jizhang(msg, myType = 0) {
             const sql = `INSERT INTO group${Math.abs(chatid)} (amount, huilv, username, msgid, type) VALUES (${amount}, ${currentHuilv}, '${username}', ${message_id}, ${myType})`
             pool.query(sql, (err, res) => {
                 if (err) {
-                    return console.log(err);
+                    return
                 }
-                console.log(text);
+
                 bot.sendMessage(chatid, text, {
                     reply_to_message_id: message_id
                 })
@@ -424,9 +427,9 @@ async function caozuoren(msg, caozuoType) {
         bot.getChatAdministrators(chatid)
             .then((res) => {
                 const member = res.find(admin => admin.user.username === name);
-                console.log(member);
+
                 if (member) {
-                    const sql = `SELECT * FROM groupList WHERE id = ${Math.abs(chatid)};`
+                    const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)};`
                     pool.query(sql, (err, res) => {
                         if (err) {
                             return
@@ -440,7 +443,7 @@ async function caozuoren(msg, caozuoType) {
                             }
                         } else {
                             if (caozuoType == '添加') {
-                                console.log(admin);
+
                                 if (admin.split(',').includes(String(member.user.id))) {
                                     return bot.sendMessage(chatid, `${name} 已经是操作人`)
                                 } else {
@@ -455,11 +458,10 @@ async function caozuoren(msg, caozuoType) {
                             }
                         }
                         const sql = caozuoType == '添加' ?
-                            `update groupList set admin = '${newAdmin}' where id = ${Math.abs(chatid)}` :
-                            `update groupList set admin = ${newAdmin.join(',') == '' ? null : `'${newAdmin.join(',')}'`} where id = ${Math.abs(chatid)}`
+                            `update grouplist set admin = '${newAdmin}' where id = ${Math.abs(chatid)}` :
+                            `update grouplist set admin = ${newAdmin.join(',') == '' ? null : `'${newAdmin.join(',')}'`} where id = ${Math.abs(chatid)}`
                         pool.query(sql, (err, res) => {
                             if (err) {
-                                console.log(err);
                                 return
                             }
                             bot.sendMessage(chatid, `成功${caozuoType}操作人 @${name}`)
@@ -475,7 +477,7 @@ async function caozuoren(msg, caozuoType) {
 //查询汇率
 async function getHuilv(chatid) {
     return new Promise((resolve, reject) => {
-        pool.query(`SELECT * FROM groupList WHERE id = ${Math.abs(chatid)}`, (err, res) => {
+        pool.query(`SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`, (err, res) => {
             if (err) return
             const huilv = res[0].huilv
             resolve(huilv)
@@ -488,9 +490,8 @@ async function shezhihuilv(chatid, num) {
     return new Promise((resolve, reject) => {
         try {
             if ((typeof num === 'number' || (typeof num === 'string' && !isNaN(parseFloat(num))))) {
-                console.log(num);
-                pool.query(`update groupList set huilv = ${num} where id = ${Math.abs(chatid)}`, (err, res) => {
-                    console.log(err, res);
+
+                pool.query(`update grouplist set huilv = ${num} where id = ${Math.abs(chatid)}`, (err, res) => {
                     if (err) {
                         return console.log(err);
                     }
@@ -514,7 +515,7 @@ async function kaishi(chatid) {
 function createTable(groupid) {
     return new Promise((resolve, reject) => {
         const tableName = 'group' + groupid
-        const sql = `SELECT * FROM groupList WHERE id = ${Math.abs(groupid)}`
+        const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(groupid)}`
         pool.query(sql, (err, res) => {
             if (err) return console.log(err, 'createTable-sql-error-1');
             const status = res[0].status
@@ -532,8 +533,7 @@ function createTable(groupid) {
                 `;
                     pool.query(createTableSQL, (err, res) => {
                         if (err) return console.error('创建表失败：', err)
-                        console.log(`成功创建表 ${tableName}`);
-                        pool.query(`update  groupList set status = 1 where id = ${Math.abs(groupid)};`, (err, res) => {
+                        pool.query(`update  grouplist set status = 1 where id = ${Math.abs(groupid)};`, (err, res) => {
                             if (err) return
                             bot.editMessageText('现在可以设置操作人和汇率', {
                                 chat_id: msg.chat.id,
@@ -565,7 +565,6 @@ function huilv(msg) {
 }
 
 bot.on('callback_query', async function onCallbackQuery(callbackQuery) {
-    console.log(callbackQuery);
     if (callbackQuery.data.search("huilvbuy_") != -1) {
         changehuilvbuy(callbackQuery)
     } else if (callbackQuery.data.search("huilvsell_") != -1) {

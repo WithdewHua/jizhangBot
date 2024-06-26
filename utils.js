@@ -1,15 +1,21 @@
 var axios = require('axios'); // Copyrigth by @miya0v0 
 var mysql = require('mysql'); // Copyrigth by @miya0v0 
-var adminId = [6267710310, 6027155874, 5369547957]
+var adminId = 6027155874
+var tgToken = ''
 
-const request = axios.create({
+const isProd = 1
+
+const request = isProd ? axios.create({
+    timeout: 60000,
+}) : axios.create({
     timeout: 60000,
     proxy: {
         protocol: 'http',
         host: '127.0.0.1',
         port: 7890
     }
-});
+})
+
 request('https://www.google.com').then(() => {
     console.log('网络正常');
 }).catch(() => {
@@ -68,17 +74,19 @@ const caozuoshouce = `
 <pre>8️⃣账单+日期：如账单2024-06-06 = 查询指定年月日账单  </pre>
 <pre>9️⃣+/-数字：如+100/-100 = 入款  </pre>
 <pre>🔟下发+/-数字u：如下发+100u/下发-100u = 按汇率下发  </pre>
-<pre>1️⃣1️⃣开启计算 = 关闭计算器  </pre>
-<pre>1️⃣2️⃣关闭计算 = 开启计算器  </pre>
+<pre>1️⃣1️⃣开启/关闭计算 = 开启/关闭计算器  </pre>
+<pre>1️⃣2️⃣上课/下课 = 解除/开启禁言  </pre>
 计算功能默认开启
-
 <code>
 开始，添加操作人，移除操作人只能拉群人执行。
 设置汇率，入款，下发，开关计算操作人可执行，
 其余所有人都能执行
 </code>
-
 <b>提示：更改汇率时，请及时下发清账后再更改汇率！</b>
+
+如果您觉得本机器人对你有帮助，并期待作者不断完善，期待您的捐助
+捐助地址👇（点击复制）
+<code>TFdRPf4wuqaRJgBEeWoX3mwH7jXPDDDDDD</code>
 `
 
 
@@ -87,5 +95,7 @@ module.exports = {
     pool,
     adminId,
     caozuoshouce,
-    evaluateExpression
+    evaluateExpression,
+    isProd,
+    tgToken
 }
