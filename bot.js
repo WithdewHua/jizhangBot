@@ -13,9 +13,22 @@ var bot = isProd ? new TelegramBot(tgToken, {
     }
 });
 
+// 测试数据库连接
+async function testDatabaseConnection() {
+    try {
+        const result = await query('SELECT 1 as test');
+        console.log('数据库连接正常:', result);
+        return true;
+    } catch (error) {
+        console.error('数据库连接测试失败:', error.message);
+        return false;
+    }
+}
+
 // 异步发送启动消息
 (async () => {
     try {
+        await testDatabaseConnection();
         await bot.sendMessage(adminId, '启动成功');
     } catch (error) {
         console.error('发送启动消息失败:', error.message);
@@ -25,13 +38,14 @@ var bot = isProd ? new TelegramBot(tgToken, {
 bot.on('message', async (msg) => {
     const { text } = msg
     const { id: userid, first_name, last_name, username } = msg.from
-    const { id: chatid, type } = msg.chat
+    const { id: chatid, type } = msg
     const { new_chat_participant, left_chat_participant } = msg
     
     if (new_chat_participant && (type == 'group' || type == 'supergroup')) {
         try {
             const res = await bot.getMe();
             if (new_chat_participant.id == res.id) {
+                console.log(`机器人被添加到群组: ${chatid}, 邀请人: ${userid}`);
                 await onInvite({ chatid, inviterId: userid });
                 await bot.sendMessage(
                     chatid,
@@ -43,9 +57,16 @@ bot.on('message', async (msg) => {
                         },
                     }
                 );
+                console.log(`群组 ${chatid} 初始化信息已发送`);
             }
         } catch (error) {
             console.error('处理新成员加入错误:', error.message);
+            // 尝试发送错误信息
+            try {
+                await bot.sendMessage(chatid, '初始化过程中发生错误，请稍后重试或联系管理员');
+            } catch (sendError) {
+                console.error('发送错误消息失败:', sendError.message);
+            }
         }
     } else if (left_chat_participant && (type == 'group' || type == 'supergroup')) { //被移除群
         // leaveGroup(chatid)
@@ -342,10 +363,10 @@ async function onInvite(data) {
         const res = await query(sql);
         
         if (res.length == 0) {
-            const insertSql = `INSERT INTO grouplist (id, inviterId, admin) VALUES (${Math.abs(chatid)}, ${Number(inviterId)}, "${String(inviterId)}")`;
+            const insertSql = `INSERT INTO grouplist (id, inviterId, admin, status, huilv) VALUES (${Math.abs(chatid)}, ${Number(inviterId)}, "${String(inviterId)}", 0, 1)`;
             await query(insertSql);
         } else {
-            const updateSql = `update grouplist set inviterId = ${Number(inviterId)}, admin = "${String(inviterId)}" where id = ${Math.abs(chatid)}`;
+            const updateSql = `update grouplist set inviterId = ${Number(inviterId)}, admin = "${String(inviterId)}", status = 0 where id = ${Math.abs(chatid)}`;
             await query(updateSql);
             await bot.sendMessage(chatid, '回归提示：操作人信息已重置，需重新添加操作人！');
         }
@@ -604,6 +625,14 @@ async function createTable(groupid) {
         const tableName = 'group' + groupid;
         const sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(groupid)}`;
         const res = await query(sql);
+        
+        // 检查查询结果是否存在
+        if (res.length === 0) {
+            console.error('群组记录不存在，无法创建表');
+            await bot.sendMessage(`-${groupid}`, '初始化失败：群组记录不存在，请重新拉取机器人');
+            return;
+        }
+        
         const status = res[0].status;
         
         if (status == 0) {
@@ -621,11 +650,12 @@ async function createTable(groupid) {
             `;
             
             await query(createTableSQL);
+            console.log(`成功创建表: ${tableName}`);
             
             const updateSql = `update grouplist set status = 1 where id = ${Math.abs(groupid)};`;
             await query(updateSql);
             
-            await bot.editMessageText('现在可以设置操作人和汇率', {
+            await bot.editMessageText('初始化成功！现在可以设置操作人和汇率', {
                 chat_id: msg.chat.id,
                 message_id: msg.message_id,
             });
@@ -634,6 +664,12 @@ async function createTable(groupid) {
         }
     } catch (error) {
         console.error('创建表错误:', error.message);
+        // 发送错误信息给群组
+        try {
+            await bot.sendMessage(`-${groupid}`, `初始化失败：${error.message}`);
+        } catch (sendError) {
+            console.error('发送错误消息失败:', sendError.message);
+        }
     }
 }
 
