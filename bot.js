@@ -118,6 +118,72 @@ bot.on('webhook_error', (error) => {
 // 首先测试最基本的消息监听
 console.log('🚀 开始设置事件监听器...');
 
+// 监听机器人被添加到群组的事件
+bot.on('my_chat_member', async (update) => {
+    try {
+        console.log('🔔 === 收到 my_chat_member 事件 ===');
+        console.log('事件详情:', JSON.stringify(update, null, 2));
+        
+        const { chat, from, new_chat_member, old_chat_member } = update;
+        const chatid = chat.id;
+        const inviterId = from.id;
+        
+        // 检查机器人状态变化
+        const oldStatus = old_chat_member?.status || 'left';
+        const newStatus = new_chat_member?.status || 'left';
+        
+        console.log('🔄 状态变化:', `${oldStatus} -> ${newStatus}`);
+        console.log('💬 群组信息:', { id: chatid, type: chat.type, title: chat.title });
+        console.log('👤 操作人:', { id: inviterId, name: from.first_name });
+        
+        // 机器人被邀请加入群组
+        if ((oldStatus === 'left' || oldStatus === 'kicked') && 
+            (newStatus === 'member' || newStatus === 'administrator')) {
+            
+            console.log(`🎊 机器人被添加到群组: ${chatid}, 邀请人: ${inviterId}`);
+            
+            // 只在群组中处理
+            if (chat.type === 'group' || chat.type === 'supergroup') {
+                try {
+                    await onInvite({ chatid, inviterId });
+                    await bot.sendMessage(
+                        chatid,
+                        `🙋大家好,我是<b>记账机器人</b>\n😊感谢把我加入贵群！\n💱请邀请人先输入开始进行初始化。`,
+                        {
+                            parse_mode: 'HTML',
+                            reply_markup: {
+                                inline_keyboard: [[{ text: '开始', callback_data: "开始" }]]
+                            },
+                        }
+                    );
+                    console.log(`✅ 群组 ${chatid} 初始化信息已发送`);
+                } catch (error) {
+                    console.error('❌ 处理群组邀请失败:', error);
+                }
+            }
+        }
+        
+        // 机器人被移除出群组
+        else if ((oldStatus === 'member' || oldStatus === 'administrator') && 
+                 (newStatus === 'left' || newStatus === 'kicked')) {
+            
+            console.log(`👋 机器人被移除出群组: ${chatid}`);
+            
+            if (chat.type === 'group' || chat.type === 'supergroup') {
+                try {
+                    await leaveGroup(chatid);
+                    console.log(`🗑️ 群组 ${chatid} 相关数据已清理`);
+                } catch (error) {
+                    console.error('❌ 清理群组数据失败:', error);
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('❌ 处理 my_chat_member 事件时发生错误:', error);
+    }
+});
+
 bot.on('message', async (msg) => {
     try {
         // 通用调试日志
@@ -137,9 +203,9 @@ bot.on('message', async (msg) => {
         const { id: chatid, type } = msg.chat || {}
         const { new_chat_participant, left_chat_participant } = msg
         
-        // 处理新成员加入 - 添加更多调试信息
+        // 处理新成员加入 - 保留原有逻辑作为备用
         if (new_chat_participant) {
-            console.log('🎉 检测到新成员加入事件');
+            console.log('🎉 检测到新成员加入事件（备用逻辑）');
             console.log('新成员信息:', {
                 id: new_chat_participant.id,
                 first_name: new_chat_participant.first_name,
@@ -155,7 +221,7 @@ bot.on('message', async (msg) => {
                 console.log('🔍 是否是机器人自己:', new_chat_participant.id == res.id);
                 
                 if (new_chat_participant.id == res.id) {
-                    console.log(`🎊 机器人被添加到群组: ${chatid}, 邀请人: ${userid}`);
+                    console.log(`🎊 机器人被添加到群组: ${chatid}, 邀请人: ${userid}（备用逻辑触发）`);
                     await onInvite({ chatid, inviterId: userid });
                     await bot.sendMessage(
                         chatid,
@@ -167,7 +233,7 @@ bot.on('message', async (msg) => {
                             },
                         }
                     );
-                    console.log(`✅ 群组 ${chatid} 初始化信息已发送`);
+                    console.log(`✅ 群组 ${chatid} 初始化信息已发送（备用逻辑）`);
                 } else {
                     console.log('👤 新成员不是机器人，忽略');
                 }
@@ -176,6 +242,20 @@ bot.on('message', async (msg) => {
             }
         } else if (left_chat_participant) {
             console.log('👋 有成员离开群组:', left_chat_participant.id);
+            
+            // 检查是否是机器人自己离开
+            const res = await bot.getMe();
+            if (left_chat_participant.id == res.id) {
+                console.log(`👋 机器人离开群组: ${chatid}（备用逻辑）`);
+                if (type == 'group' || type == 'supergroup') {
+                    try {
+                        await leaveGroup(chatid);
+                        console.log(`🗑️ 群组 ${chatid} 相关数据已清理（备用逻辑）`);
+                    } catch (error) {
+                        console.error('❌ 清理群组数据失败（备用逻辑）:', error);
+                    }
+                }
+            }
         }
 
         // 处理文本消息
@@ -372,6 +452,45 @@ bot.on('message', async (msg) => {
     }
 });
 
+// 监听群组更新事件（如标题更改、描述更改等）
+bot.on('chat_member', async (update) => {
+    try {
+        console.log('👥 === 收到 chat_member 事件 ===');
+        console.log('事件详情:', JSON.stringify(update, null, 2));
+        
+        const { chat, from, new_chat_member, old_chat_member } = update;
+        const chatid = chat.id;
+        
+        // 检查是否是关于机器人的状态变化
+        const botInfo = await bot.getMe();
+        if (new_chat_member?.user?.id === botInfo.id) {
+            const oldStatus = old_chat_member?.status || 'left';
+            const newStatus = new_chat_member?.status || 'left';
+            
+            console.log('🤖 机器人状态变化:', `${oldStatus} -> ${newStatus}`);
+            
+            // 机器人被邀请或状态改变
+            if ((oldStatus === 'left' || oldStatus === 'kicked') && 
+                (newStatus === 'member' || newStatus === 'administrator')) {
+                
+                console.log(`🎊 机器人状态变为活跃: ${chatid}, 操作人: ${from.id}`);
+                
+                if (chat.type === 'group' || chat.type === 'supergroup') {
+                    try {
+                        await onInvite({ chatid, inviterId: from.id });
+                        console.log(`✅ 群组 ${chatid} 机器人状态已更新`);
+                    } catch (error) {
+                        console.error('❌ 更新机器人状态失败:', error);
+                    }
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('❌ 处理 chat_member 事件时发生错误:', error);
+    }
+});
+
 console.log('✅ 事件监听器设置完成');
 
 //上下课
@@ -483,19 +602,34 @@ async function leaveGroup(chatid) {
 async function onInvite(data) {
     try {
         const { chatid, inviterId } = data;
+        console.log(`🔄 处理群组邀请 - 群组: ${chatid}, 邀请人: ${inviterId}`);
+        
         const sql = `select * from grouplist where id = ${Math.abs(chatid)}`;
         const res = await query(sql);
         
         if (res.length == 0) {
+            console.log('📝 创建新的群组记录');
             const insertSql = `INSERT INTO grouplist (id, inviterId, admin, status, huilv) VALUES (${Math.abs(chatid)}, ${Number(inviterId)}, "${String(inviterId)}", 0, 1)`;
             await query(insertSql);
+            console.log(`✅ 群组 ${Math.abs(chatid)} 记录创建成功`);
         } else {
+            console.log('🔄 更新现有群组记录');
             const updateSql = `update grouplist set inviterId = ${Number(inviterId)}, admin = "${String(inviterId)}", status = 0 where id = ${Math.abs(chatid)}`;
             await query(updateSql);
-            await bot.sendMessage(chatid, '回归提示：操作人信息已重置，需重新添加操作人！');
+            
+            // 发送回归提示
+            try {
+                await bot.sendMessage(chatid, '🔄 回归提示：操作人信息已重置，需重新添加操作人！');
+                console.log('📤 回归提示消息已发送');
+            } catch (msgError) {
+                console.error('发送回归提示失败:', msgError.message);
+            }
+            
+            console.log(`✅ 群组 ${Math.abs(chatid)} 记录更新成功`);
         }
     } catch (error) {
         console.error('处理群邀请错误:', error.message);
+        console.error('错误详情:', error);
         throw error;
     }
 }
@@ -520,19 +654,35 @@ async function isInvite(data) {
 // 是否是操作人
 async function isCozuoren(chatid, userid) {
     try {
+        console.log(`🔍 检查操作权限 - 群组: ${chatid}, 用户: ${userid}`);
+        
         let sql = `SELECT * FROM grouplist WHERE id = ${Math.abs(chatid)}`;
         const res = await query(sql);
         
+        if (!res || res.length === 0) {
+            console.log('❌ 群组记录不存在');
+            throw new Error('群组未初始化，请先添加机器人到群组');
+        }
+        
         let admin = res[0]?.admin;
-        if (!admin || admin === null) {
-            throw new Error('没有操作权限');
+        console.log('📋 当前操作人列表:', admin);
+        
+        if (!admin || admin === null || admin === '') {
+            console.log('❌ 无操作人权限配置');
+            throw new Error('没有操作权限 - 未配置操作人');
         } else {
-            admin = admin.split(',');
-            let val = admin.findIndex(item => item == userid);
-            if (val != -1) {
+            admin = admin.split(',').filter(id => id.trim() !== '');
+            console.log('👥 解析后的操作人ID列表:', admin);
+            
+            let val = admin.findIndex(item => item.trim() == userid.toString());
+            console.log(`🔍 权限检查结果: 用户${userid} 在操作人列表中的位置: ${val}`);
+            
+            if (val !== -1) {
+                console.log('✅ 用户有操作权限');
                 return true;
             } else {
-                throw new Error('没有操作权限');
+                console.log('❌ 用户无操作权限');
+                throw new Error('没有操作权限 - 不在操作人列表中');
             }
         }
     } catch (error) {
