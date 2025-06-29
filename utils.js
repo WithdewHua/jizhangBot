@@ -1,5 +1,5 @@
 var axios = require('axios'); // Copyrigth by @miya0v0 
-var mysql = require('mysql'); // Copyrigth by @miya0v0 
+var mysql = require('mysql2'); // Copyrigth by @miya0v0 
 const config = require('./config');
 
 // 从配置文件获取配置
