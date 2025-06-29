@@ -420,7 +420,7 @@ bot.on('message', async (msg) => {
                 console.log('👤 私聊消息处理');
                 if (text == '/start' || text == '/test') {
                     console.log('🧪 收到私聊测试命令');
-                    bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人！\n✅ 机器人工作正常！`, {
+                    bot.sendMessage(userid, `🙋Hi,${first_name}${last_name || ''},欢迎使用自助记账机器人！\n✅ 机器人工作正常！`, {
                         parse_mode: 'HTML',
                         reply_markup: {
                             keyboard: constants.keyboard,
