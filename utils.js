@@ -1,101 +1,90 @@
 var axios = require('axios'); // Copyrigth by @miya0v0 
 var mysql = require('mysql'); // Copyrigth by @miya0v0 
-var adminId = 6027155874
-var tgToken = ''
+const config = require('./config');
 
-const isProd = 1
+// 从配置文件获取配置
+const { adminId, tgToken, isProd, proxy, database, request: requestConfig } = config;
 
 const request = isProd ? axios.create({
-    timeout: 60000,
+    timeout: requestConfig.timeout,
 }) : axios.create({
-    timeout: 60000,
-    proxy: {
-        protocol: 'http',
-        host: '127.0.0.1',
-        port: 7890
-    }
+    timeout: requestConfig.timeout,
+    proxy: proxy.settings
 })
 
-request('https://www.google.com').then(() => {
-    console.log('网络正常');
-}).catch(() => {
-    console.log('网络异常');
-})
+// 异步检查网络连接
+async function checkNetwork() {
+    try {
+        await request.get('https://www.google.com');
+        console.log('网络正常');
+        return true;
+    } catch (error) {
+        console.log('网络异常:', error.message);
+        return false;
+    }
+}
+
+// 调用网络检查（使用正确的异步方式）
+checkNetwork().catch(console.error);
 
 var pool = mysql.createPool({
-    port: 3306, //mysql端口
-    user: 'root', //mysql用户名
-    password: '123456', //mysql密码
-    database: 'myzf', //mysql数据库
+    port: database.port,
+    user: database.user,
+    password: database.password,
+    database: database.database,
 });
 
+// 改进的查询函数，增加错误处理
 function query(sql, values) {
     return new Promise((resolve, reject) => {
         pool.getConnection(function (err, connection) {
             if (err) {
-                reject(err)
+                console.error('数据库连接错误:', err);
+                reject(err);
             } else {
                 connection.query(sql, values, (err, rows) => {
-
                     if (err) {
-                        reject(err)
+                        console.error('SQL查询错误:', err);
+                        reject(err);
                     } else {
-                        resolve(rows)
+                        resolve(rows);
                     }
-                    connection.release()
-                })
+                    connection.release();
+                });
             }
-        })
-    })
+        });
+    });
 }
 
 function evaluateExpression(expression) {
     try {
-        expression = expression.replace(/×/g, '*');
-        const result = eval(expression);
+        // 安全的表达式验证
+        const safeExpression = expression.replace(/×/g, '*');
+        
+        // 只允许数字、运算符和括号
+        if (!/^[\d+\-*×/().\s]+$/.test(safeExpression)) {
+            return null;
+        }
+        
+        const result = eval(safeExpression);
         // 检查结果是否为有效数值
         if (Number.isNaN(result) || !Number.isFinite(result)) {
-            return null
+            return null;
         }
         return result;
     } catch (error) {
+        console.error('表达式计算错误:', error.message);
         return null;
     }
 }
 
-const caozuoshouce = `
-<pre>1️⃣将机器人拉入群 </pre>
-<pre>2️⃣输入开始执行初始化  </pre>
-<pre>3️⃣添加操作人+@用户名）= 添加操作人  @前面加空格</pre>
-<pre>4️⃣移除操作人+@用户名）= 移除操作人  @前面加空格</pre>
-<pre>5️⃣设置汇率+值 = 设置汇率  </pre>
-<pre>6️⃣z0 = 查询欧意实时价格  </pre>
-<pre>7️⃣+0/-0 = 查询今/昨日账单  </pre>
-<pre>8️⃣账单+日期：如账单2024-06-06 = 查询指定年月日账单  </pre>
-<pre>9️⃣+/-数字：如+100/-100 = 入款  </pre>
-<pre>🔟下发+/-数字u：如下发+100u/下发-100u = 按汇率下发  </pre>
-<pre>1️⃣1️⃣开启/关闭计算 = 开启/关闭计算器  </pre>
-<pre>1️⃣2️⃣上课/下课 = 解除/开启禁言  </pre>
-计算功能默认开启
-<code>
-开始，添加操作人，移除操作人只能拉群人执行。
-设置汇率，入款，下发，开关计算操作人可执行，
-其余所有人都能执行
-</code>
-<b>提示：更改汇率时，请及时下发清账后再更改汇率！</b>
-
-如果您觉得本机器人对你有帮助，并期待作者不断完善，期待您的捐助
-捐助地址👇（点击复制）
-<code>TFdRPf4wuqaRJgBEeWoX3mwH7jXPDDDDDD</code>
-`
-
-
 module.exports = {
     request,
     pool,
+    query,
     adminId,
-    caozuoshouce,
     evaluateExpression,
     isProd,
-    tgToken
-}
+    tgToken,
+    checkNetwork
+};
