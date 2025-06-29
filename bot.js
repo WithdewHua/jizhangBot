@@ -520,7 +520,7 @@ async function showCaozuoren(chatid, msgid) {
             let msg = '<b>操作人列表</b>\n\n';
             res.filter(admin => admins.includes(String(admin.user.id)))
                 .forEach((el, i) => {
-                    msg += `${i}.  ${el.user.first_name}${el.user.last_name}  @${el.user.username}\n`;
+                    msg += `${i}.  ${el.user.first_name ? el.user.first_name : ''}${el.user.last_name ? el.user.last_name : ''}  @${el.user.username}\n`;
                 });
             
             await bot.sendMessage(chatid, msg, {
@@ -759,7 +759,7 @@ async function jinrizhangdan(chatid, day = 0, date = null) {
         await bot.sendMessage(`-${chatid}`, msg, {
             parse_mode: 'HTML',
             reply_markup: {
-                inline_keyboard: [[{ text: 'USDT闪兑TRX', url: 'https://t.me/+4Cf_vjvu-qE1ZDll' }]]
+                inline_keyboard: [[{ text: "🏦KK 支付导航", url: 'https://t.me/iKunPayNotify' }]]
             },
         });
     } catch (error) {
@@ -795,8 +795,63 @@ async function jizhang(msg, myType = 0) {
         const sql = `INSERT INTO group${Math.abs(chatid)} (amount, huilv, username, msgid, type) VALUES (${amount}, ${currentHuilv}, '${username}', ${message_id}, ${myType})`;
         await query(sql);
         
-        await bot.sendMessage(chatid, text, {
-            reply_to_message_id: message_id
+        // 查询今日统计信息
+        const todayStatsSql = `SELECT 
+            SUM(CASE WHEN type = 0 THEN amount ELSE 0 END) as todayIncome,
+            SUM(CASE WHEN type = 1 THEN amount ELSE 0 END) as todayPayout,
+            COUNT(CASE WHEN type = 0 THEN 1 END) as incomeCount,
+            COUNT(CASE WHEN type = 1 THEN 1 END) as payoutCount
+            FROM group${Math.abs(chatid)} 
+            WHERE DATE(create_time) = CURDATE()`;
+        const todayStats = await query(todayStatsSql);
+        
+        // 构建详细的反馈消息
+        const operationType = myType === 0 ? '入款' : '下发';
+        const operationEmoji = myType === 0 ? '💰' : '💸';
+        const userName = first_name ? `${first_name}${last_name || ''}` : username || '未知用户';
+        
+        let feedbackMsg = `${operationEmoji} <b>${operationType}记录成功</b>\n\n`;
+        feedbackMsg += `👤 操作人：<code>${userName}</code>\n`;
+        feedbackMsg += `💱 当前汇率：<code>${currentHuilv}</code>\n`;
+        
+        if (myType === 0) {
+            // 入款信息
+            feedbackMsg += `💰 入款金额：<code>${formatNumber(amount)}</code>\n`;
+            feedbackMsg += `💵 等值USDT：<code>${formatNumber(amount / currentHuilv)}U</code>\n`;
+        } else {
+            // 下发信息
+            if (text.includes('u')) {
+                // 如果是U单位下发
+                const usdtAmount = Number(text.split('下发')[1].split('u')[0]);
+                feedbackMsg += `💸 下发金额：<code>${formatNumber(usdtAmount)}U</code>\n`;
+                feedbackMsg += `💰 等值人民币：<code>${formatNumber(amount)}</code>\n`;
+            } else {
+                // 如果是人民币单位下发
+                feedbackMsg += `💸 下发金额：<code>${formatNumber(amount)}</code>\n`;
+                feedbackMsg += `💵 等值USDT：<code>${formatNumber(amount / currentHuilv)}U</code>\n`;
+            }
+        }
+        
+        feedbackMsg += `🕐 记录时间：<code>${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</code>\n`;
+        
+        // 添加今日统计信息
+        if (todayStats && todayStats[0]) {
+            const stats = todayStats[0];
+            const todayIncome = stats.todayIncome || 0;
+            const todayPayout = stats.todayPayout || 0;
+            const incomeCount = stats.incomeCount || 0;
+            const payoutCount = stats.payoutCount || 0;
+            const balance = todayIncome - todayPayout;
+            
+            feedbackMsg += `\n📊 <b>今日统计</b>\n`;
+            feedbackMsg += `� 入款：<code>${formatNumber(todayIncome)}</code> (${incomeCount}笔)\n`;
+            feedbackMsg += `📉 下发：<code>${formatNumber(todayPayout)}</code> (${payoutCount}笔)\n`;
+            feedbackMsg += `⚖️ 余额：<code>${formatNumber(balance)}</code>${balance >= 0 ? ' ✅' : ' ⚠️'}`;
+        }
+        
+        await bot.sendMessage(chatid, feedbackMsg, {
+            reply_to_message_id: message_id,
+            parse_mode: 'HTML'
         });
     } catch (error) {
         console.error('记账错误:', error.message);
