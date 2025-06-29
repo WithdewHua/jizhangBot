@@ -29,7 +29,14 @@ async function testDatabaseConnection() {
 (async () => {
     try {
         await testDatabaseConnection();
+        const botInfo = await bot.getMe();
+        console.log('机器人信息:', {
+            id: botInfo.id,
+            username: botInfo.username,
+            first_name: botInfo.first_name
+        });
         await bot.sendMessage(adminId, '启动成功');
+        console.log('机器人启动完成，开始监听消息...');
     } catch (error) {
         console.error('发送启动消息失败:', error.message);
     }
@@ -38,12 +45,23 @@ async function testDatabaseConnection() {
 bot.on('message', async (msg) => {
     const { text } = msg
     const { id: userid, first_name, last_name, username } = msg.from
-    const { id: chatid, type } = msg
+    const { id: chatid, type } = msg.chat
     const { new_chat_participant, left_chat_participant } = msg
+    
+    // 添加调试日志
+    console.log('收到消息事件:', { 
+        chatid, 
+        type, 
+        hasNewParticipant: !!new_chat_participant,
+        hasLeftParticipant: !!left_chat_participant,
+        newParticipantId: new_chat_participant?.id,
+        text: text || 'no text'
+    });
     
     if (new_chat_participant && (type == 'group' || type == 'supergroup')) {
         try {
             const res = await bot.getMe();
+            console.log('机器人信息:', res.id, '新成员ID:', new_chat_participant.id);
             if (new_chat_participant.id == res.id) {
                 console.log(`机器人被添加到群组: ${chatid}, 邀请人: ${userid}`);
                 await onInvite({ chatid, inviterId: userid });
@@ -832,3 +850,23 @@ function formatNumber(num) {
 module.exports = {
     bot
 }
+
+// 额外的事件监听器 - 用于调试和确保捕获所有相关事件
+bot.on('new_chat_members', async (msg) => {
+    console.log('收到 new_chat_members 事件:', msg);
+    // 如果 message 事件没有触发，这个事件可能会触发
+});
+
+bot.on('left_chat_member', async (msg) => {
+    console.log('收到 left_chat_member 事件:', msg);
+});
+
+// 监听所有更新以便调试
+bot.on('polling_error', (error) => {
+    console.error('轮询错误:', error.message);
+});
+
+// 监听错误
+bot.on('error', (error) => {
+    console.error('机器人错误:', error.message);
+});
