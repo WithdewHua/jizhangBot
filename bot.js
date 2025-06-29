@@ -43,21 +43,21 @@ async function testDatabaseConnection() {
 })();
 
 bot.on('message', async (msg) => {
+    // 通用调试日志
+    console.log('=== 收到消息事件 ===');
+    console.log('消息类型:', msg.chat?.type);
+    console.log('消息内容:', msg.text || '无文本');
+    console.log('新成员:', msg.new_chat_participant?.id);
+    console.log('离开成员:', msg.left_chat_participant?.id);
+    console.log('聊天ID:', msg.chat?.id);
+    console.log('===================');
+
     const { text } = msg
     const { id: userid, first_name, last_name, username } = msg.from
     const { id: chatid, type } = msg.chat
     const { new_chat_participant, left_chat_participant } = msg
     
-    // 添加调试日志
-    console.log('收到消息事件:', { 
-        chatid, 
-        type, 
-        hasNewParticipant: !!new_chat_participant,
-        hasLeftParticipant: !!left_chat_participant,
-        newParticipantId: new_chat_participant?.id,
-        text: text || 'no text'
-    });
-    
+    // 处理新成员加入
     if (new_chat_participant && (type == 'group' || type == 'supergroup')) {
         try {
             const res = await bot.getMe();
@@ -79,194 +79,195 @@ bot.on('message', async (msg) => {
             }
         } catch (error) {
             console.error('处理新成员加入错误:', error.message);
-            // 尝试发送错误信息
             try {
                 await bot.sendMessage(chatid, '初始化过程中发生错误，请稍后重试或联系管理员');
             } catch (sendError) {
                 console.error('发送错误消息失败:', sendError.message);
             }
         }
-    } else if (left_chat_participant && (type == 'group' || type == 'supergroup')) { //被移除群
-        // leaveGroup(chatid)
+    } else if (left_chat_participant && (type == 'group' || type == 'supergroup')) {
+        // 处理成员离开
+        console.log('有成员离开群组');
+    }
+
+    // 处理文本消息
+    if (text) {
+        const { message_id } = msg
+        const { title } = msg.chat
+        
+        if (type == 'group' || type == 'supergroup') {  //群消息
+            if (text == '开始') {
+                try {
+                    await isInvite({ chatid, userid })
+                    await kaishi(chatid)
+                } catch (error) {
+                    console.error('开始命令错误:', error);
+                }
+            } else if (text.includes('设置汇率')) {
+                try {
+                    await isCozuoren(chatid, userid)
+                    await shezhihuilv(chatid, text.split('设置汇率')[1])
+                } catch (error) {
+                    console.error('设置汇率错误:', error);
+                }
+            } else if (text == '查询汇率') {
+                try {
+                    const huilv = await getHuilv(chatid)
+                    bot.sendMessage(chatid, `当前的汇率为 ${huilv}`)
+                } catch (error) {
+                    console.error('查询汇率错误:', error);
+                }
+            } else if (text.includes('添加操作人 @')) {
+                try {
+                    await isInvite({ chatid, userid })
+                    await caozuoren(msg, '添加')
+                } catch (error) {
+                    console.error('添加操作人错误:', error);
+                }
+            } else if (text.includes('移除操作人 @')) {
+                try {
+                    await isInvite({ chatid, userid })
+                    await caozuoren(msg, '移除')
+                } catch (error) {
+                    console.error('移除操作人错误:', error);
+                }
+            } else if (text == '+0') {
+                try {
+                    const status = await getGroupStatus(chatid)
+                    if (status == 1) {
+                        await jinrizhangdan(Math.abs(chatid))
+                    }
+                } catch (error) {
+                    console.error('查询今日账单错误:', error);
+                }
+            } else if (text == '-0') {
+                try {
+                    const status = await getGroupStatus(chatid)
+                    if (status == 1) {
+                        await jinrizhangdan(Math.abs(chatid), 1)
+                    }
+                } catch (error) {
+                    console.error('查询昨日账单错误:', error);
+                }
+            } else if (/^\+[0-9]*\.?[0-9]+$/.test(text) || /^\-[0-9]*\.?[0-9]+$/.test(text)) {
+                try {
+                    await isCozuoren(chatid, userid)
+                    const status = await getGroupStatus(chatid)
+                    if (status == 1) {
+                        await jizhang(msg)
+                    }
+                } catch (error) {
+                    console.error('记账错误:', error);
+                }
+            } else if (text.includes('下发')) {
+                try {
+                    await isCozuoren(chatid, userid)
+                    const status = await getGroupStatus(chatid)
+                    if (status == 1) {
+                        await jizhang(msg, 1)
+                    }
+                } catch (error) {
+                    console.error('下发错误:', error);
+                }
+            } else if (/^账单(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(text)) {
+                try {
+                    const status = await getGroupStatus(chatid)
+                    if (status == 1) {
+                        const date = text.split('账单')[1]
+                        await jinrizhangdan(Math.abs(chatid), 3, date)
+                    }
+                } catch (error) {
+                    console.error('查询指定日期账单错误:', error);
+                }
+            } else if (text == "z0") {
+                huilv(msg)
+            } else if (text == '关闭计算') {
+                try {
+                    await isCozuoren(chatid, userid);
+                    await jisuangongneng(chatid, 0);
+                } catch (error) {
+                    console.error('关闭计算错误:', error);
+                }
+            } else if (text == '开启计算') {
+                try {
+                    await isCozuoren(chatid, userid);
+                    await jisuangongneng(chatid, 1);
+                } catch (error) {
+                    console.error('开启计算错误:', error);
+                }
+            } else if (/^[\d+\-*×/().\s]+$/.test(text) && !/^\d+$/.test(text)) {
+                try {
+                    const res = await getGroupInfo(chatid)
+                    if (res && res.jisuanStatus == 1) {
+                        const val = evaluateExpression(text)
+                        if (val != null) {
+                            bot.sendMessage(chatid, '' + val, {
+                                reply_to_message_id: message_id
+                            })
+                        }
+                    }
+                } catch (error) {
+                    console.error('计算错误:', error);
+                }
+            } else if (text == '汇率') {
+                try {
+                    const val = await getHuilv(chatid)
+                    bot.sendMessage(chatid, `当前汇率为 ${val}`, {
+                        reply_to_message_id: message_id
+                    })
+                } catch (error) {
+                    console.error('查询汇率错误:', error);
+                }
+            } else if (text == '显示操作人') {
+                try {
+                    await isCozuoren(chatid, userid);
+                    await showCaozuoren(chatid, message_id);
+                } catch (error) {
+                    console.error('显示操作人错误:', error);
+                }
+            } else if (text == '上课') {
+                try {
+                    await isCozuoren(chatid, userid);
+                    await shangxiake(1, chatid);
+                } catch (error) {
+                    console.error('上课错误:', error);
+                }
+            } else if (text == '下课') {
+                try {
+                    await isCozuoren(chatid, userid);
+                    await shangxiake(0, chatid);
+                } catch (error) {
+                    console.error('下课错误:', error);
+                }
+            } else if (text == '/test') {
+                bot.sendMessage(chatid, '机器人工作正常！群组消息测试成功');
+            }
+            changeTitle(chatid, title);
+        } else if (type == 'private') {
+            if (text == '/start' || text == '/test') {
+                bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人，使用前请先阅读使用说明。机器人工作正常！`, {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        keyboard: constants.keyboard,
+                        resize_keyboard: true
+                    }
+                })
+            } else if (text == '📕使用说明') {
+                bot.sendMessage(userid, constants.caozuoshouce, {
+                    parse_mode: 'HTML'
+                })
+            } else if (text == '🏦KK 支付导航') {
+                bot.sendMessage(userid, 'https://t.me/iKunPayNotify')
+            } else if (text == '🚀开始使用') {
+                bot.sendMessage(userid, '我是记账机器人', {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '点击拉我入群', url: 'https://t.me/MyKunKunPay_bot?startgroup=start' }]]
+                    }
+                })
+            }
+        }
     }
 });
-
-bot.on('text', async (msg) => {
-    // console.log(msg, '\n--------msgText');
-    const { text, message_id } = msg
-    const { id: userid, first_name, last_name, username } = msg.from
-    const { id: chatid, type, title } = msg.chat
-    if (type == 'group' || type == 'supergroup') {  //群消息
-        if (text == '开始') {
-            try {
-                await isInvite({ chatid, userid })
-                await kaishi(chatid)
-            } catch (error) {
-                console.error('开始命令错误:', error);
-            }
-        } else if (text.includes('设置汇率')) {
-            try {
-                await isCozuoren(chatid, userid)
-                await shezhihuilv(chatid, text.split('设置汇率')[1])
-            } catch (error) {
-                console.error('设置汇率错误:', error);
-            }
-        } else if (text == '查询汇率') {
-            try {
-                const huilv = await getHuilv(chatid)
-                bot.sendMessage(chatid, `当前的汇率为 ${huilv}`)
-            } catch (error) {
-                console.error('查询汇率错误:', error);
-            }
-        } else if (text.includes('添加操作人 @')) {
-            try {
-                await isInvite({ chatid, userid })
-                await caozuoren(msg, '添加')
-            } catch (error) {
-                console.error('添加操作人错误:', error);
-            }
-        } else if (text.includes('移除操作人 @')) {
-            try {
-                await isInvite({ chatid, userid })
-                await caozuoren(msg, '移除')
-            } catch (error) {
-                console.error('移除操作人错误:', error);
-            }
-        } else if (text == '+0') {
-            try {
-                const status = await getGroupStatus(chatid)
-                if (status == 1) {
-                    await jinrizhangdan(Math.abs(chatid))
-                }
-            } catch (error) {
-                console.error('查询今日账单错误:', error);
-            }
-        } else if (text == '-0') {
-            try {
-                const status = await getGroupStatus(chatid)
-                if (status == 1) {
-                    await jinrizhangdan(Math.abs(chatid), 1)
-                }
-            } catch (error) {
-                console.error('查询昨日账单错误:', error);
-            }
-        } else if (/^\+[0-9]*\.?[0-9]+$/.test(text) || /^\-[0-9]*\.?[0-9]+$/.test(text)) {
-            try {
-                await isCozuoren(chatid, userid)
-                const status = await getGroupStatus(chatid)
-                if (status == 1) {
-                    await jizhang(msg)
-                }
-            } catch (error) {
-                console.error('记账错误:', error);
-            }
-        } else if (text.includes('下发')) {
-            try {
-                await isCozuoren(chatid, userid)
-                const status = await getGroupStatus(chatid)
-                if (status == 1) {
-                    await jizhang(msg, 1)
-                }
-            } catch (error) {
-                console.error('下发错误:', error);
-            }
-        } else if (/^账单(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(text)) {
-            try {
-                const status = await getGroupStatus(chatid)
-                if (status == 1) {
-                    const date = text.split('账单')[1]
-                    await jinrizhangdan(Math.abs(chatid), 3, date)
-                }
-            } catch (error) {
-                console.error('查询指定日期账单错误:', error);
-            }
-        } else if (text == "z0") {
-            huilv(msg)
-        } else if (text == '关闭计算') {
-            try {
-                await isCozuoren(chatid, userid);
-                await jisuangongneng(chatid, 0);
-            } catch (error) {
-                console.error('关闭计算错误:', error);
-            }
-        } else if (text == '开启计算') {
-            try {
-                await isCozuoren(chatid, userid);
-                await jisuangongneng(chatid, 1);
-            } catch (error) {
-                console.error('开启计算错误:', error);
-            }
-        } else if (/^[\d+\-*×/().\s]+$/.test(text) && !/^\d+$/.test(text)) {
-            try {
-                const res = await getGroupInfo(chatid)
-                if (res.jisuanStatus == 1) {
-                    const val = evaluateExpression(text)
-                    if (val != null) {
-                        bot.sendMessage(chatid, '' + val, {
-                            reply_to_message_id: message_id
-                        })
-                    }
-                }
-            } catch (error) {
-                console.error('计算错误:', error);
-            }
-        } else if (text == '汇率') {
-            try {
-                const val = await getHuilv(chatid)
-                bot.sendMessage(chatid, `当前汇率为 ${val}`, {
-                    reply_to_message_id: message_id
-                })
-            } catch (error) {
-                console.error('查询汇率错误:', error);
-            }
-        } else if (text == '显示操作人') {
-            try {
-                await isCozuoren(chatid, userid);
-                await showCaozuoren(chatid, message_id);
-            } catch (error) {
-                console.error('显示操作人错误:', error);
-            }
-        } else if (text == '上课') {
-            try {
-                await isCozuoren(chatid, userid);
-                await shangxiake(1, chatid);
-            } catch (error) {
-                console.error('上课错误:', error);
-            }
-        } else if (text == '下课') {
-            try {
-                await isCozuoren(chatid, userid);
-                await shangxiake(0, chatid);
-            } catch (error) {
-                console.error('下课错误:', error);
-            }
-        }
-        changeTitle(chatid, title);
-    } else if (type == 'private') {
-        if (text == '/start') {
-            bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人，使用前请先阅读使用说明。`, {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    keyboard: constants.keyboard,
-                    resize_keyboard: true
-                }
-            })
-        } else if (text == '📕使用说明') {
-            bot.sendMessage(userid, constants.caozuoshouce, {
-                parse_mode: 'HTML'
-            })
-        } else if (text == '🏦KK 支付导航') {
-            bot.sendMessage(userid, 'https://t.me/iKunPayNotify')
-        } else if (text == '🚀开始使用') {
-            bot.sendMessage(userid, '我是记账机器人', {
-                reply_markup: {
-                    inline_keyboard: [[{ text: '点击拉我入群', url: 'https://t.me/MyKunKunPay_bot?startgroup=start' }]]
-                }
-            })
-        }
-    }
-})
-
 
 //上下课
 async function shangxiake(type, chatid) {
@@ -851,22 +852,16 @@ module.exports = {
     bot
 }
 
-// 额外的事件监听器 - 用于调试和确保捕获所有相关事件
-bot.on('new_chat_members', async (msg) => {
-    console.log('收到 new_chat_members 事件:', msg);
-    // 如果 message 事件没有触发，这个事件可能会触发
-});
-
-bot.on('left_chat_member', async (msg) => {
-    console.log('收到 left_chat_member 事件:', msg);
-});
-
-// 监听所有更新以便调试
+// 添加额外的事件监听器用于调试
 bot.on('polling_error', (error) => {
     console.error('轮询错误:', error.message);
 });
 
-// 监听错误
 bot.on('error', (error) => {
     console.error('机器人错误:', error.message);
+});
+
+// 监听 webhook 错误（如果使用 webhook 模式）
+bot.on('webhook_error', (error) => {
+    console.error('Webhook 错误:', error.message);
 });
