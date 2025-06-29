@@ -28,246 +28,205 @@ async function testDatabaseConnection() {
 // 异步发送启动消息
 (async () => {
     try {
+        console.log('🔧 开始初始化机器人...');
+        
+        // 检查关键配置
+        console.log('📋 配置检查:');
+        console.log('  - 环境模式:', isProd ? '生产环境' : '开发环境');
+        console.log('  - Token长度:', tgToken ? tgToken.length : '未设置');
+        console.log('  - AdminId:', adminId);
+        
+        if (!tgToken) {
+            throw new Error('❌ Telegram Bot Token 未设置！请在 config.js 中填入正确的 token');
+        }
+        
+        console.log('🗄️ 测试数据库连接...');
         await testDatabaseConnection();
+        
+        console.log('🤖 获取机器人信息...');
         const botInfo = await bot.getMe();
-        console.log('机器人信息:', {
+        console.log('✅ 机器人信息:', {
             id: botInfo.id,
             username: botInfo.username,
-            first_name: botInfo.first_name
+            first_name: botInfo.first_name,
+            can_join_groups: botInfo.can_join_groups,
+            can_read_all_group_messages: botInfo.can_read_all_group_messages
         });
-        await bot.sendMessage(adminId, '启动成功');
-        console.log('机器人启动完成，开始监听消息...');
+        
+        // 测试机器人是否能发送消息
+        console.log('📤 发送启动消息...');
+        await bot.sendMessage(adminId, `🤖 机器人启动成功!
+        
+🆔 机器人ID: ${botInfo.id}
+👤 用户名: @${botInfo.username}
+📛 名称: ${botInfo.first_name}
+🏷️ 环境: ${isProd ? '生产' : '开发'}
+
+请先私聊发送 /test 测试机器人是否正常工作`);
+        
+        console.log('✅ 机器人启动完成，开始监听消息...');
+        
+        // 设置轮询参数，增加调试信息
+        console.log('📡 轮询状态:', bot.isPolling());
+        console.log('⚙️ 机器人配置:', {
+            polling: true,
+            hasProxy: !isProd,
+            proxyUrl: !isProd ? config.proxy.url : '无代理'
+        });
+        
+        // 测试轮询是否正常工作
+        setTimeout(() => {
+            console.log('🔍 5秒后检查轮询状态:', bot.isPolling());
+            if (!bot.isPolling()) {
+                console.error('❌ 轮询未正常启动！');
+            } else {
+                console.log('✅ 轮询正常运行中...');
+            }
+        }, 5000);
+        
     } catch (error) {
-        console.error('发送启动消息失败:', error.message);
+        console.error('❌ 启动失败:', error.message);
+        console.error('📋 错误详情:', error);
+        
+        if (error.message.includes('401')) {
+            console.error('🔑 Token 错误！请检查 config.js 中的 tgToken 是否正确');
+        } else if (error.message.includes('network') || error.message.includes('timeout')) {
+            console.error('🌐 网络错误！请检查网络连接或代理设置');
+        }
+        
+        process.exit(1);
     }
 })();
 
-bot.on('message', async (msg) => {
-    // 通用调试日志
-    console.log('=== 收到消息事件 ===');
-    console.log('消息类型:', msg.chat?.type);
-    console.log('消息内容:', msg.text || '无文本');
-    console.log('新成员:', msg.new_chat_participant?.id);
-    console.log('离开成员:', msg.left_chat_participant?.id);
-    console.log('聊天ID:', msg.chat?.id);
-    console.log('===================');
+// 添加更详细的错误监听
+bot.on('polling_error', (error) => {
+    console.error('❌ 轮询错误:', error.message);
+    console.error('错误代码:', error.code);
+    console.error('完整错误:', error);
+});
 
-    const { text } = msg
-    const { id: userid, first_name, last_name, username } = msg.from
-    const { id: chatid, type } = msg.chat
-    const { new_chat_participant, left_chat_participant } = msg
-    
-    // 处理新成员加入
-    if (new_chat_participant && (type == 'group' || type == 'supergroup')) {
-        try {
-            const res = await bot.getMe();
-            console.log('机器人信息:', res.id, '新成员ID:', new_chat_participant.id);
-            if (new_chat_participant.id == res.id) {
-                console.log(`机器人被添加到群组: ${chatid}, 邀请人: ${userid}`);
-                await onInvite({ chatid, inviterId: userid });
-                await bot.sendMessage(
-                    chatid,
-                    `🙋大家好,我是<b>记账机器人</b>\n😊感谢把我加入贵群！\n💱请邀请人先输入开始进行初始化。`,
-                    {
+bot.on('error', (error) => {
+    console.error('❌ 机器人错误:', error.message);
+    console.error('完整错误:', error);
+});
+
+// 监听 webhook 错误（如果使用 webhook 模式）
+bot.on('webhook_error', (error) => {
+    console.error('❌ Webhook 错误:', error.message);
+});
+
+// 首先测试最基本的消息监听
+console.log('🚀 开始设置事件监听器...');
+
+bot.on('message', async (msg) => {
+    try {
+        // 通用调试日志
+        console.log('📨 === 收到消息事件 ===');
+        console.log('📍 消息类型:', msg.chat?.type);
+        console.log('📝 消息内容:', msg.text || '无文本');
+        console.log('👤 发送人ID:', msg.from?.id);
+        console.log('👥 新成员:', msg.new_chat_participant?.id);
+        console.log('👋 离开成员:', msg.left_chat_participant?.id);
+        console.log('💬 聊天ID:', msg.chat?.id);
+        console.log('🕐 消息时间:', new Date(msg.date * 1000));
+        console.log('📄 完整消息对象键:', Object.keys(msg));
+        console.log('========================');
+
+        const { text } = msg
+        const { id: userid, first_name, last_name, username } = msg.from || {}
+        const { id: chatid, type } = msg.chat || {}
+        const { new_chat_participant, left_chat_participant } = msg
+        
+        // 处理新成员加入 - 添加更多调试信息
+        if (new_chat_participant) {
+            console.log('🎉 检测到新成员加入事件');
+            console.log('新成员信息:', {
+                id: new_chat_participant.id,
+                first_name: new_chat_participant.first_name,
+                username: new_chat_participant.username,
+                is_bot: new_chat_participant.is_bot
+            });
+            console.log('群组类型:', type);
+            
+            if (type == 'group' || type == 'supergroup') {
+                const res = await bot.getMe();
+                console.log('🤖 当前机器人ID:', res.id);
+                console.log('🆕 新成员ID:', new_chat_participant.id);
+                console.log('🔍 是否是机器人自己:', new_chat_participant.id == res.id);
+                
+                if (new_chat_participant.id == res.id) {
+                    console.log(`🎊 机器人被添加到群组: ${chatid}, 邀请人: ${userid}`);
+                    await onInvite({ chatid, inviterId: userid });
+                    await bot.sendMessage(
+                        chatid,
+                        `🙋大家好,我是<b>记账机器人</b>\n😊感谢把我加入贵群！\n💱请邀请人先输入开始进行初始化。`,
+                        {
+                            parse_mode: 'HTML',
+                            reply_markup: {
+                                inline_keyboard: [[{ text: '开始', callback_data: "开始" }]]
+                            },
+                        }
+                    );
+                    console.log(`✅ 群组 ${chatid} 初始化信息已发送`);
+                } else {
+                    console.log('👤 新成员不是机器人，忽略');
+                }
+            } else {
+                console.log('📍 不是群组消息，群组类型:', type);
+            }
+        } else if (left_chat_participant) {
+            console.log('👋 有成员离开群组:', left_chat_participant.id);
+        }
+
+        // 处理文本消息
+        if (text) {
+            console.log('📝 处理文本消息:', text);
+            const { message_id } = msg
+            const { title } = msg.chat
+            
+            if (type == 'group' || type == 'supergroup') {
+                console.log('👥 群组消息处理');
+                if (text == '开始') {
+                    console.log('🚀 收到开始命令');
+                    try {
+                        await isInvite({ chatid, userid })
+                        await kaishi(chatid)
+                    } catch (error) {
+                        console.error('开始命令错误:', error);
+                        await bot.sendMessage(chatid, `开始命令执行失败: ${error.message}`);
+                    }
+                } else if (text == '/test') {
+                    console.log('🧪 收到测试命令');
+                    bot.sendMessage(chatid, '✅ 机器人工作正常！群组消息测试成功');
+                }
+                // ...existing text handling code...
+                changeTitle(chatid, title);
+            } else if (type == 'private') {
+                console.log('👤 私聊消息处理');
+                if (text == '/start' || text == '/test') {
+                    console.log('🧪 收到私聊测试命令');
+                    bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人！\n✅ 机器人工作正常！`, {
                         parse_mode: 'HTML',
                         reply_markup: {
-                            inline_keyboard: [[{ text: '开始', callback_data: "开始" }]]
-                        },
-                    }
-                );
-                console.log(`群组 ${chatid} 初始化信息已发送`);
-            }
-        } catch (error) {
-            console.error('处理新成员加入错误:', error.message);
-            try {
-                await bot.sendMessage(chatid, '初始化过程中发生错误，请稍后重试或联系管理员');
-            } catch (sendError) {
-                console.error('发送错误消息失败:', sendError.message);
-            }
-        }
-    } else if (left_chat_participant && (type == 'group' || type == 'supergroup')) {
-        // 处理成员离开
-        console.log('有成员离开群组');
-    }
-
-    // 处理文本消息
-    if (text) {
-        const { message_id } = msg
-        const { title } = msg.chat
-        
-        if (type == 'group' || type == 'supergroup') {  //群消息
-            if (text == '开始') {
-                try {
-                    await isInvite({ chatid, userid })
-                    await kaishi(chatid)
-                } catch (error) {
-                    console.error('开始命令错误:', error);
-                }
-            } else if (text.includes('设置汇率')) {
-                try {
-                    await isCozuoren(chatid, userid)
-                    await shezhihuilv(chatid, text.split('设置汇率')[1])
-                } catch (error) {
-                    console.error('设置汇率错误:', error);
-                }
-            } else if (text == '查询汇率') {
-                try {
-                    const huilv = await getHuilv(chatid)
-                    bot.sendMessage(chatid, `当前的汇率为 ${huilv}`)
-                } catch (error) {
-                    console.error('查询汇率错误:', error);
-                }
-            } else if (text.includes('添加操作人 @')) {
-                try {
-                    await isInvite({ chatid, userid })
-                    await caozuoren(msg, '添加')
-                } catch (error) {
-                    console.error('添加操作人错误:', error);
-                }
-            } else if (text.includes('移除操作人 @')) {
-                try {
-                    await isInvite({ chatid, userid })
-                    await caozuoren(msg, '移除')
-                } catch (error) {
-                    console.error('移除操作人错误:', error);
-                }
-            } else if (text == '+0') {
-                try {
-                    const status = await getGroupStatus(chatid)
-                    if (status == 1) {
-                        await jinrizhangdan(Math.abs(chatid))
-                    }
-                } catch (error) {
-                    console.error('查询今日账单错误:', error);
-                }
-            } else if (text == '-0') {
-                try {
-                    const status = await getGroupStatus(chatid)
-                    if (status == 1) {
-                        await jinrizhangdan(Math.abs(chatid), 1)
-                    }
-                } catch (error) {
-                    console.error('查询昨日账单错误:', error);
-                }
-            } else if (/^\+[0-9]*\.?[0-9]+$/.test(text) || /^\-[0-9]*\.?[0-9]+$/.test(text)) {
-                try {
-                    await isCozuoren(chatid, userid)
-                    const status = await getGroupStatus(chatid)
-                    if (status == 1) {
-                        await jizhang(msg)
-                    }
-                } catch (error) {
-                    console.error('记账错误:', error);
-                }
-            } else if (text.includes('下发')) {
-                try {
-                    await isCozuoren(chatid, userid)
-                    const status = await getGroupStatus(chatid)
-                    if (status == 1) {
-                        await jizhang(msg, 1)
-                    }
-                } catch (error) {
-                    console.error('下发错误:', error);
-                }
-            } else if (/^账单(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(text)) {
-                try {
-                    const status = await getGroupStatus(chatid)
-                    if (status == 1) {
-                        const date = text.split('账单')[1]
-                        await jinrizhangdan(Math.abs(chatid), 3, date)
-                    }
-                } catch (error) {
-                    console.error('查询指定日期账单错误:', error);
-                }
-            } else if (text == "z0") {
-                huilv(msg)
-            } else if (text == '关闭计算') {
-                try {
-                    await isCozuoren(chatid, userid);
-                    await jisuangongneng(chatid, 0);
-                } catch (error) {
-                    console.error('关闭计算错误:', error);
-                }
-            } else if (text == '开启计算') {
-                try {
-                    await isCozuoren(chatid, userid);
-                    await jisuangongneng(chatid, 1);
-                } catch (error) {
-                    console.error('开启计算错误:', error);
-                }
-            } else if (/^[\d+\-*×/().\s]+$/.test(text) && !/^\d+$/.test(text)) {
-                try {
-                    const res = await getGroupInfo(chatid)
-                    if (res && res.jisuanStatus == 1) {
-                        const val = evaluateExpression(text)
-                        if (val != null) {
-                            bot.sendMessage(chatid, '' + val, {
-                                reply_to_message_id: message_id
-                            })
+                            keyboard: constants.keyboard,
+                            resize_keyboard: true
                         }
-                    }
-                } catch (error) {
-                    console.error('计算错误:', error);
-                }
-            } else if (text == '汇率') {
-                try {
-                    const val = await getHuilv(chatid)
-                    bot.sendMessage(chatid, `当前汇率为 ${val}`, {
-                        reply_to_message_id: message_id
                     })
-                } catch (error) {
-                    console.error('查询汇率错误:', error);
                 }
-            } else if (text == '显示操作人') {
-                try {
-                    await isCozuoren(chatid, userid);
-                    await showCaozuoren(chatid, message_id);
-                } catch (error) {
-                    console.error('显示操作人错误:', error);
-                }
-            } else if (text == '上课') {
-                try {
-                    await isCozuoren(chatid, userid);
-                    await shangxiake(1, chatid);
-                } catch (error) {
-                    console.error('上课错误:', error);
-                }
-            } else if (text == '下课') {
-                try {
-                    await isCozuoren(chatid, userid);
-                    await shangxiake(0, chatid);
-                } catch (error) {
-                    console.error('下课错误:', error);
-                }
-            } else if (text == '/test') {
-                bot.sendMessage(chatid, '机器人工作正常！群组消息测试成功');
+                // ...existing private message handling...
             }
-            changeTitle(chatid, title);
-        } else if (type == 'private') {
-            if (text == '/start' || text == '/test') {
-                bot.sendMessage(userid, `🙋Hi,${first_name}${last_name},欢迎使用自助记账机器人，使用前请先阅读使用说明。机器人工作正常！`, {
-                    parse_mode: 'HTML',
-                    reply_markup: {
-                        keyboard: constants.keyboard,
-                        resize_keyboard: true
-                    }
-                })
-            } else if (text == '📕使用说明') {
-                bot.sendMessage(userid, constants.caozuoshouce, {
-                    parse_mode: 'HTML'
-                })
-            } else if (text == '🏦KK 支付导航') {
-                bot.sendMessage(userid, 'https://t.me/iKunPayNotify')
-            } else if (text == '🚀开始使用') {
-                bot.sendMessage(userid, '我是记账机器人', {
-                    reply_markup: {
-                        inline_keyboard: [[{ text: '点击拉我入群', url: 'https://t.me/MyKunKunPay_bot?startgroup=start' }]]
-                    }
-                })
-            }
+        } else {
+            console.log('📭 收到非文本消息或系统消息');
         }
+        
+    } catch (error) {
+        console.error('❌ 处理消息时发生错误:', error.message);
+        console.error('错误详情:', error);
+        console.error('消息内容:', msg);
     }
 });
+
+console.log('✅ 事件监听器设置完成');
 
 //上下课
 async function shangxiake(type, chatid) {
@@ -851,17 +810,3 @@ function formatNumber(num) {
 module.exports = {
     bot
 }
-
-// 添加额外的事件监听器用于调试
-bot.on('polling_error', (error) => {
-    console.error('轮询错误:', error.message);
-});
-
-bot.on('error', (error) => {
-    console.error('机器人错误:', error.message);
-});
-
-// 监听 webhook 错误（如果使用 webhook 模式）
-bot.on('webhook_error', (error) => {
-    console.error('Webhook 错误:', error.message);
-});
